@@ -187,6 +187,7 @@ form .ib.rec{border-color:var(--pink);animation:bl 1s infinite}
 <script>
 /* standalone backend shim: gives the page the same window.claude API, powered by this server */
 (()=>{if(window.claude)return;
+try{fetch("/healthz",{cache:"no-store"}).catch(()=>{})}catch(_){} // kick the server awake as early as possible, in case it's asleep (free plan)
 let ws,ready=false,q=[],rid=0,pend={},sid=0,subs={},rooms={},uid="",uname="";
 const send=o=>{const s=JSON.stringify(o);ready?ws.send(s):q.push(s)};
 let everOpened=false;
@@ -204,7 +205,7 @@ function open(){ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")
     else if(m.op==="room"){const r=rooms[m.room];if(r)(r.hs[m.topic]||[]).forEach(f=>f({data:m.data,isMe:false,from:m.from}))}
     else if(m.op==="peers"){const r=rooms[m.room];if(r)r.pc.forEach(f=>f({peers:m.peers}))}}}
 open();
-const call=o=>new Promise((res,rej)=>{const id=++rid,req=Object.assign({rid:id},o);pend[id]={res,rej,req};send(req);setTimeout(()=>{if(pend[id]){delete pend[id];rej(new Error("no response from the server \u2014 it may be waking up, try again in a bit"))}},45000)});
+const call=o=>new Promise((res,rej)=>{const id=++rid,req=Object.assign({rid:id},o);pend[id]={res,rej,req};send(req);setTimeout(()=>{if(pend[id]){delete pend[id];rej(new Error("no response from the server \u2014 it may be waking up, try again in a bit"))}},90000)});
 const mk=(id,data)=>({id,exists:true,data:()=>data,metadata:{fromCache:false}});
 function snap(s,ch){let d=[...s.c].map(([id,v])=>mk(id,v));
   if(s.ord){const k=s.dir==="desc"?-1:1;d.sort((a,b)=>((a.data()[s.ord]>b.data()[s.ord])-(a.data()[s.ord]<b.data()[s.ord]))*k)}
@@ -240,7 +241,7 @@ function showLogin(err){
     +'<button class="mbtn" id="la_reg" type="button">create account</button></div>';
   document.body.append(ov);
   const go=async op=>{const name=document.getElementById("la_name").value.trim(),pass=document.getElementById("la_pass").value;
-    setErr("working\u2026");const slow=setTimeout(()=>setErr("still working \u2014 the server may be waking up, this can take up to a minute on a free plan\u2026"),4000);
+    setErr("working\u2026");const slow=setTimeout(()=>setErr("still working \u2014 a free Render instance can take up to a minute to wake up from sleep, hang tight\u2026"),4000);
     try{const r=await call({op,name,pass});clearTimeout(slow);finishAuth(r.uid,r.name,r.token)}
     catch(e){clearTimeout(slow);setErr(e.message||"something went wrong")}};
   document.getElementById("la_log").onclick=()=>go("login");
