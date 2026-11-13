@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: morse-chat
+    runtime: node
+    plan: starter        # free plan works too, but delete the disk block (data resets on restart)
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: chat-data
+      mountPath: /var/data
+      sizeGB: 1
