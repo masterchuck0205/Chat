@@ -1,10 +1,21 @@
 const http=require("http"),fs=require("fs"),path=require("path"),crypto=require("crypto"),{WebSocketServer}=require("ws");
-const DIR=process.env.DATA_DIR||path.join(__dirname,"data"),BL=path.join(DIR,"blobs"),DBF=path.join(DIR,"db.json");
+const DIR=process.env.DATA_DIR||path.join(__dirname,"data"),BL=path.join(DIR,"blobs"),DBF=path.join(DIR,"db.json"),UF=path.join(DIR,"users.json");
 fs.mkdirSync(BL,{recursive:true});
 let db=new Map();try{db=new Map(Object.entries(JSON.parse(fs.readFileSync(DBF,"utf8"))))}catch(_){}
-let dirty=false;
+let users=new Map();try{users=new Map(Object.entries(JSON.parse(fs.readFileSync(UF,"utf8"))))}catch(_){}
+const SF=path.join(DIR,"sessions.json");let sessionsObj={};try{sessionsObj=JSON.parse(fs.readFileSync(SF,"utf8"))}catch(_){}
+let dirty=false,udirty=false,sdirty=false;
 setInterval(()=>{if(!dirty)return;dirty=false;fs.writeFile(DBF+".tmp",JSON.stringify(Object.fromEntries(db)),e=>{if(!e)fs.rename(DBF+".tmp",DBF,()=>{})})},2000);
-const okPath=p=>typeof p==="string"&&p.length<200&&/^[\w-]+(\/[\w.@+-]+)*$/.test(p);
+setInterval(()=>{if(!udirty)return;udirty=false;fs.writeFile(UF+".tmp",JSON.stringify(Object.fromEntries(users)),e=>{if(!e)fs.rename(UF+".tmp",UF,()=>{})})},2000);
+setInterval(()=>{if(!sdirty)return;sdirty=false;fs.writeFile(SF+".tmp",JSON.stringify(sessionsObj),e=>{if(!e)fs.rename(SF+".tmp",SF,()=>{})})},2000);
+const okName=n=>typeof n==="string"&&/^[a-z0-9_]{3,20}$/i.test(n);
+const hashPass=(pass,salt)=>crypto.scryptSync(pass,salt,64).toString("hex");
+function makeUser(name){const uid=crypto.randomBytes(12).toString("hex"),salt=crypto.randomBytes(16).toString("hex");return{uid,salt}}
+const sessions=new Map(Object.entries(sessionsObj)); // token -> {uid,name}, mirrored into sessionsObj for persistence
+function setSession(t,v){sessions.set(t,v);sessionsObj[t]=v;sdirty=true}
+function dropSession(t){sessions.delete(t);delete sessionsObj[t];sdirty=true}
+// "users/..." is a reserved path prefix: it is never reachable through the generic get/set/sub ops below, only through the register/login/resume ops.
+const okPath=p=>typeof p==="string"&&p.length<300&&!p.includes("\0")&&/^[^/]+(\/[^/]+)*$/.test(p)&&!/^users(\/|$)/i.test(p);
 const parent=p=>p.slice(0,p.lastIndexOf("/")),socks=new Set(),rooms=new Map();
 const kids=(c)=>[...db].filter(([k])=>k.startsWith(c+"/")&&!k.slice(c.length+1).includes("/")).map(([k,v])=>({id:k.slice(c.length+1),data:v}));
 const send=(ws,o)=>{if(ws.readyState===1)ws.send(JSON.stringify(o))};
@@ -34,7 +45,21 @@ wss.on("connection",ws=>{
     const ack=(ok,data,err)=>m.rid&&send(ws,{op:"ack",rid:m.rid,ok,data,err});
     const now=Date.now();ws.hits=ws.hits.filter(t=>now-t<10000);
     if(["set","upd","del","emit"].includes(m.op)){if(ws.hits.length>=40){ack(false,null,"slow down");return}ws.hits.push(now)}
+    if(["register","login"].includes(m.op)){if(ws.hits.length>=10){ack(false,null,"too many attempts, wait a bit");return}ws.hits.push(now)}
     switch(m.op){
+      case"register":{const name=String(m.name||"").trim(),pass=String(m.pass||"");
+        if(!okName(name))return ack(false,null,"name must be 3-20 letters, numbers or _");
+        if(pass.length<4)return ack(false,null,"password needs 4+ characters");
+        const key=name.toLowerCase();if(users.has(key))return ack(false,null,"that name is taken");
+        const{uid,salt}=makeUser(name);users.set(key,{uid,name,salt,hash:hashPass(pass,salt)});udirty=true;
+        const token=crypto.randomBytes(24).toString("hex");setSession(token,{uid,name});ack(true,{uid,name,token});break}
+      case"login":{const name=String(m.name||"").trim(),pass=String(m.pass||""),key=name.toLowerCase(),u=users.get(key);
+        if(!u)return ack(false,null,"no account with that name");
+        const a=Buffer.from(hashPass(pass,u.salt),"hex"),b=Buffer.from(u.hash,"hex");
+        if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return ack(false,null,"wrong password");
+        const token=crypto.randomBytes(24).toString("hex");setSession(token,{uid:u.uid,name:u.name});ack(true,{uid:u.uid,name:u.name,token});break}
+      case"resume":{const s=sessions.get(String(m.token||""));if(!s)return ack(false,null,"session expired, please log in again");ack(true,{uid:s.uid,name:s.name});break}
+      case"logout":dropSession(String(m.token||""));ack(true);break;
       case"sub":if(!okPath(m.coll))return;{let d=kids(m.coll);const ord=/^\w+$/.test(m.ord||"")?m.ord:null,dir=m.dir==="desc"?-1:1;
         if(ord)d.sort((a,b)=>((a.data[ord]>b.data[ord])-(a.data[ord]<b.data[ord]))*dir);if(m.limit>0)d=d.slice(0,Math.min(500,m.limit));
         ws.subs.set(m.sid,{coll:m.coll});send(ws,{op:"init",sid:m.sid,docs:d})}break;
