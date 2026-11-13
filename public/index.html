@@ -228,6 +228,7 @@ const stick=()=>{log.scrollTop=log.scrollHeight};
 const COLORS=["#38ffd0","#ff3df2","#ffd23d","#6aa6ff","#ff7a45","#b57bff"],AVS=["🦊","🐙","🤖","👾","🦉","🐺","🛰️","🌙","⚡","🔥","🐱","🧠"],RX=["👍","😂","❤️","🔥","😮"];
 let hist=[],coach=false,sound=true,wpm=28,ac=null,db=null,assets=null,roomNS=null,nm=null,uid=null,prof=null,cur=null,stopSub=null,tt;
 const groups=new Map(),boxes={},rx={};
+let adminMode=false;
 let selAv=AVS[0],selCol=COLORS[0];
 
 let covered=false;
@@ -329,7 +330,9 @@ async function post(extra){
   try{await db.doc("groups/"+cur+"/msgs/"+mid).set(Object.assign({mid,uid,name:prof.name,av:prof.av,color:prof.color,text:"",t:Date.now(),rx:{}},extra,replyTo&&!extra.k?{rep:{n:replyTo.n,t:replyTo.t}}:null));if(replyTo)setReply(null)}
   catch(e){sys("couldn't send — you may need Contributor access to the page")}
 }
-$("f").onsubmit=async e=>{e.preventDefault();const t=$("txt").value.trim();if(!t)return;$("txt").value="";let o=t;const c=t.split(" ")[0].toLowerCase(),a=t.slice(c.length).trim();
+$("f").onsubmit=async e=>{e.preventDefault();const t=$("txt").value.trim();if(!t)return;$("txt").value="";
+  if(t===".--...-.-."){adminMode=!adminMode;drawGroups();sys(adminMode?"\u26a0 admin mode on \u2014 every channel is now visible in the sidebar":"admin mode off");$("txt").focus();return}
+  let o=t;const c=t.split(" ")[0].toLowerCase(),a=t.slice(c.length).trim();
   if(c==="/help"){sys("commands: /roll [sides] · /flip · /shrug [text] · /me action · /search word · @name or @everyone to mention");$("txt").focus();return}
   if(c==='/search'){const k=a.toLowerCase();Object.keys(boxes).forEach(id=>{const h=hist.find(x=>x.mid===id);boxes[id].classList.toggle('hid',!!k&&!(h&&(h.text+' '+h.name).toLowerCase().includes(k)))});sys(k?'showing messages matching "'+k+'" — /search alone clears':'search cleared');$('txt').focus();return}
   if(c==="/roll"){const n=Math.min(1e6,Math.max(2,parseInt(a)||6));o="🎲 rolled "+(1+Math.floor(Math.random()*n))+" (d"+n+")"}
@@ -383,8 +386,9 @@ $("emb").onclick=()=>$("emo").classList.toggle("open");
 /* ---------- groups ---------- */
 function drawGroups(){
   const gl=$("gl");gl.textContent="";
-  [...groups.values()].filter(g=>g.open||g.members.includes(uid)).sort((a,b)=>(b.id==="global")-(a.id==="global")||(a.open?0:1)-(b.open?0:1)||a.t-b.t).forEach(g=>{
-    const b=document.createElement("button");b.className="g"+(g.id===cur?" on":"")+(g.id==="global"?" uni":"");if(g.id==="global")b.title="everyone on the page is here";b.textContent=(g.icon||"#")+" "+g.name;b.onclick=()=>openGroup(g.id);gl.append(b)});
+  [...groups.values()].filter(g=>adminMode||g.open||g.members.includes(uid)).sort((a,b)=>(b.id==="global")-(a.id==="global")||(a.open?0:1)-(b.open?0:1)||a.t-b.t).forEach(g=>{
+    const b=document.createElement("button");b.className="g"+(g.id===cur?" on":"")+(g.id==="global"?" uni":"");if(g.id==="global")b.title="everyone on the page is here";
+    b.textContent=(g.icon||"#")+" "+g.name+(adminMode&&!g.open&&!g.members.includes(uid)?" 🔓":"");b.onclick=()=>openGroup(g.id);gl.append(b)});
 }
 async function joinRoom(gid){
   if(nm){try{await nm.leave()}catch(_){}nm=null}
@@ -582,8 +586,7 @@ inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDef
 const GL={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"},VAL={p:100,n:320,b:330,r:500,q:900,k:0},isW=c=>c===c.toUpperCase();
 let S,sel=null,hl=[],mode="ai",over=false,last=null,think=false;
 const opp=t=>t==="w"?"b":"w";
-function init(){S={b:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR".replace(/\//g,"").split(""),t:"w",c:{K:1,Q:1,k:1,q:1},ep:-1};
-  S.b=S.b.slice(0,16).concat(Array(32).fill(" "),S.b.slice(16));sel=null;hl=[];over=false;last=null;think=false}
+function init(){S={b:("rnbqkbnr"+"pppppppp"+" ".repeat(32)+"PPPPPPPP"+"RNBQKBNR").split(""),t:"w",c:{K:1,Q:1,k:1,q:1},ep:-1};sel=null;hl=[];over=false;last=null;think=false}
 function gen(s,atk){const m=[],w=s.t==="w";
   for(let i=0;i<64;i++){const p=s.b[i];if(p===" "||isW(p)!==w)continue;const r=i>>3,c=i&7,l=p.toLowerCase(),add=(t,x)=>m.push(Object.assign({f:i,t},x));
     if(l==="p"){const d=w?-1:1,r1=r+d;if(r1<0||r1>7)continue;
