@@ -105,6 +105,7 @@ form .ib.rec{border-color:var(--pink);animation:bl 1s infinite}
 #log.nocoach .badge,#log.nocoach .why{display:none}
 #cover{position:fixed;inset:0;background:#000;z-index:99;display:none;cursor:pointer}#cover.on{display:block}
 #log.hideEN .plain{display:none}#log.hideEN .msg.done .code{font-size:20px;opacity:1;text-shadow:var(--glow)}
+#log.hideMorse .code{display:none}#log.hideMorse .plain{display:block;font-size:15px;opacity:1}
 #lb img{max-width:94vw;max-height:94vh}#lb{cursor:zoom-out}
 #drop{position:fixed;inset:0;border:3px dashed var(--neon);background:rgba(56,255,208,.08);display:none;align-items:center;justify-content:center;font-size:22px;color:var(--neon);z-index:8;pointer-events:none}
 #drop.on{display:flex}
@@ -135,7 +136,7 @@ form .ib.rec{border-color:var(--pink);animation:bl 1s infinite}
   <div class="ctl">
     <button id="snd" aria-pressed="true">sound on</button>
     <label>speed <input id="wpm" type="range" min="12" max="50" value="28"> <span id="wv">28</span> wpm</label>
-    <button id="thm">theme</button><button id="cch" aria-pressed="false">🤖 coach</button><button id="hen" aria-pressed="false">hide English</button><button id="hid" title="Hide everything instantly (Esc)">🙈 hide chat</button><button id="chs">♟ chess</button><button id="wdb">📄 doc mode</button><span class="sp"></span><span>click a message to skip typing</span>
+    <button id="thm">theme</button><button id="cch" aria-pressed="false">🤖 coach</button><button id="hen" aria-pressed="false">hide English</button><button id="hmo" aria-pressed="false">hide morse</button><input type="color" id="bgp" title="chat background colour" style="width:34px;height:34px;padding:2px;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:none"><button id="hid" title="Hide everything instantly (Esc)">🙈 hide chat</button><button id="chs">♟ chess</button><button id="wdb">📄 doc mode</button><span class="sp"></span><span>click a message to skip typing</span>
   </div>
   <div id="rev"></div>
   <div id="log" class="nocoach" aria-live="polite"></div>
@@ -576,6 +577,11 @@ $("thm").onclick=()=>{const r=document.documentElement;r.dataset.theme=getComput
 function setCover(on){covered=on;$("cover").classList.toggle("on",on);document.title=on?"New Tab":"MORSE//CHAT"}
 $("hid").onclick=()=>setCover(true);$("cover").onclick=()=>setCover(false);
 $("hen").onclick=e=>{const on=!log.classList.contains("hideEN");log.classList.toggle("hideEN",on);e.target.setAttribute("aria-pressed",on);e.target.textContent=on?"show English":"hide English";stick()};
+$("hmo").onclick=e=>{const on=!log.classList.contains("hideMorse");log.classList.toggle("hideMorse",on);e.target.setAttribute("aria-pressed",on);e.target.textContent=on?"show morse":"hide morse";stick()};
+(()=>{let saved="";try{saved=localStorage.getItem("mc_bg")||""}catch(_){}
+  if(/^#[0-9a-f]{6}$/i.test(saved)){document.documentElement.style.setProperty("--bg",saved);$("bgp").value=saved}
+  $("bgp").oninput=e=>{document.documentElement.style.setProperty("--bg",e.target.value);try{localStorage.setItem("mc_bg",e.target.value)}catch(_){}};
+})();
 addEventListener("keydown",e=>{if(e.key!=="Escape")return;
   if(covered){setCover(false);return}
   const o=["lb","pc","gm","cm","wd"].map($).find(x=>x.classList.contains("open"));
