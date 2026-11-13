@@ -189,9 +189,13 @@ form .ib.rec{border-color:var(--pink);animation:bl 1s infinite}
 (()=>{if(window.claude)return;
 let ws,ready=false,q=[],rid=0,pend={},sid=0,subs={},rooms={},uid="",uname="";
 const send=o=>{const s=JSON.stringify(o);ready?ws.send(s):q.push(s)};
+let everOpened=false;
+function banner(show){let b=document.getElementById("la_rc");if(!b&&show){b=document.createElement("div");b.id="la_rc";
+    b.style.cssText="position:fixed;left:0;right:0;top:0;z-index:40;background:#5a1e1e;color:#fff;text-align:center;font-size:13px;padding:5px";b.textContent="reconnecting\u2026";document.body.append(b)}
+  else if(b&&!show)b.remove()}
 function open(){ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
-  ws.onopen=()=>{ready=true;q.splice(0).forEach(s=>ws.send(s));Object.values(subs).forEach(s=>send(s.req));Object.keys(rooms).forEach(r=>send({op:"join",room:r}))};
-  ws.onclose=()=>{ready=false;setTimeout(open,1500)};
+  ws.onopen=()=>{ready=true;if(everOpened)banner(false);everOpened=true;q.splice(0).forEach(s=>ws.send(s));Object.values(subs).forEach(s=>send(s.req));Object.keys(rooms).forEach(r=>send({op:"join",room:r}));Object.values(pend).forEach(p=>p.req&&send(p.req))};
+  ws.onclose=()=>{ready=false;if(everOpened)banner(true);setTimeout(open,1500)};
   ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}
     if(m.op==="ack"){const p=pend[m.rid];if(p){delete pend[m.rid];m.ok?p.res(m.data):p.rej(new Error(m.err||"failed"))}}
     else if(m.op==="init"||m.op==="chg"){const s=subs[m.sid];if(!s)return;
@@ -200,7 +204,7 @@ function open(){ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")
     else if(m.op==="room"){const r=rooms[m.room];if(r)(r.hs[m.topic]||[]).forEach(f=>f({data:m.data,isMe:false,from:m.from}))}
     else if(m.op==="peers"){const r=rooms[m.room];if(r)r.pc.forEach(f=>f({peers:m.peers}))}}}
 open();
-const call=o=>new Promise((res,rej)=>{const id=++rid;pend[id]={res,rej};send(Object.assign({rid:id},o));setTimeout(()=>{if(pend[id]){delete pend[id];rej(new Error("timeout"))}},10000)});
+const call=o=>new Promise((res,rej)=>{const id=++rid,req=Object.assign({rid:id},o);pend[id]={res,rej,req};send(req);setTimeout(()=>{if(pend[id]){delete pend[id];rej(new Error("no response from the server \u2014 it may be waking up, try again in a bit"))}},45000)});
 const mk=(id,data)=>({id,exists:true,data:()=>data,metadata:{fromCache:false}});
 function snap(s,ch){let d=[...s.c].map(([id,v])=>mk(id,v));
   if(s.ord){const k=s.dir==="desc"?-1:1;d.sort((a,b)=>((a.data()[s.ord]>b.data()[s.ord])-(a.data()[s.ord]<b.data()[s.ord]))*k)}
@@ -219,7 +223,12 @@ const downloads={save:async({filename,data})=>{const a=document.createElement("a
 /* -------- login -------- */
 let authResolve;const authP=new Promise(r=>authResolve=r);
 function finishAuth(u,n,token){uid=u;uname=n;try{localStorage.setItem("mc_tok",token);localStorage.setItem("mc_name",n)}catch(_){}
-  const ov=document.getElementById("la_ov");if(ov)ov.remove();authResolve(uid)}
+  const ov=document.getElementById("la_ov");if(ov)ov.remove();addLogout(n,token);authResolve(uid)}
+function addLogout(n,token){const b=document.createElement("button");b.id="la_out";b.textContent="log out ("+n+")";
+  b.style.cssText="position:fixed;right:8px;bottom:8px;z-index:25;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;opacity:.7";
+  b.onmouseenter=()=>b.style.opacity=1;b.onmouseleave=()=>b.style.opacity=.7;
+  b.onclick=()=>{if(!confirm("Log out of "+n+"?"))return;send({op:"logout",token});try{localStorage.removeItem("mc_tok");localStorage.removeItem("mc_name")}catch(_){}location.reload()};
+  document.body.append(b)}
 function showLogin(err){
   if(document.getElementById("la_ov"))return setErr(err);
   const ov=document.createElement("div");ov.id="la_ov";ov.className="ov open";
@@ -231,16 +240,16 @@ function showLogin(err){
     +'<button class="mbtn" id="la_reg" type="button">create account</button></div>';
   document.body.append(ov);
   const go=async op=>{const name=document.getElementById("la_name").value.trim(),pass=document.getElementById("la_pass").value;
-    setErr("working…");
-    try{const r=await call({op,name,pass});finishAuth(r.uid,r.name,r.token)}
-    catch(e){setErr(e.message||"something went wrong")}};
+    setErr("working\u2026");const slow=setTimeout(()=>setErr("still working \u2014 the server may be waking up, this can take up to a minute on a free plan\u2026"),4000);
+    try{const r=await call({op,name,pass});clearTimeout(slow);finishAuth(r.uid,r.name,r.token)}
+    catch(e){clearTimeout(slow);setErr(e.message||"something went wrong")}};
   document.getElementById("la_log").onclick=()=>go("login");
   document.getElementById("la_reg").onclick=()=>go("register");
   document.getElementById("la_pass").addEventListener("keydown",e=>{if(e.key==="Enter")go("login")});
   setErr(err)}
 function setErr(t){const e=document.getElementById("la_err");if(e)e.textContent=t||""}
 (async()=>{let tok="";try{tok=localStorage.getItem("mc_tok")||""}catch(_){}
-  if(tok){try{const r=await call({op:"resume",token:tok});finishAuth(r.uid,r.name,tok);return}catch(_){}}
+  if(tok){try{const r=await call({op:"resume",token:tok});uid=r.uid;uname=r.name;addLogout(r.name,tok);authResolve(uid);return}catch(_){}}
   showLogin("")})();
 
 const mods={user:{id:()=>authP,name:()=>uname},db,room,assets,downloads,sample:null};
