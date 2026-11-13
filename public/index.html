@@ -186,9 +186,7 @@ form .ib.rec{border-color:var(--pink);animation:bl 1s infinite}
 <script>
 /* standalone backend shim: gives the page the same window.claude API, powered by this server */
 (()=>{if(window.claude)return;
-let uid="";try{uid=localStorage.getItem("mc_uid")||""}catch(_){}
-if(!/^[0-9a-f]{16}$/.test(uid)){uid=[...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join("");try{localStorage.setItem("mc_uid",uid)}catch(_){}}
-let ws,ready=false,q=[],rid=0,pend={},sid=0,subs={},rooms={};
+let ws,ready=false,q=[],rid=0,pend={},sid=0,subs={},rooms={},uid="",uname="";
 const send=o=>{const s=JSON.stringify(o);ready?ws.send(s):q.push(s)};
 function open(){ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
   ws.onopen=()=>{ready=true;q.splice(0).forEach(s=>ws.send(s));Object.values(subs).forEach(s=>send(s.req));Object.keys(rooms).forEach(r=>send({op:"join",room:r}))};
@@ -216,7 +214,35 @@ const room={join:async name=>{const r={hs:{},pc:[]};rooms[name]=r;send({op:"join
   return{on:(t,f)=>{(r.hs[t]=r.hs[t]||[]).push(f)},emit:(t,d)=>send({op:"emit",room:name,topic:t,data:d}),onPeers:f=>{r.pc.push(f)},leave:()=>{if(rooms[name]===r)delete rooms[name];send({op:"leave",room:name})}}}};
 const assets={upload:async b=>{const r=await fetch("/_upload",{method:"POST",headers:{"Content-Type":b.type||"application/octet-stream"},body:b});if(!r.ok)throw Object.assign(new Error("upload"),{code:r.status});return r.json()}};
 const downloads={save:async({filename,data})=>{const a=document.createElement("a");a.href=URL.createObjectURL(data);a.download=filename;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}};
-const mods={user:{id:async()=>uid},db,room,assets,downloads,sample:null};
+
+/* -------- login -------- */
+let authResolve;const authP=new Promise(r=>authResolve=r);
+function finishAuth(u,n,token){uid=u;uname=n;try{localStorage.setItem("mc_tok",token);localStorage.setItem("mc_name",n)}catch(_){}
+  const ov=document.getElementById("la_ov");if(ov)ov.remove();authResolve(uid)}
+function showLogin(err){
+  if(document.getElementById("la_ov"))return setErr(err);
+  const ov=document.createElement("div");ov.id="la_ov";ov.className="ov open";
+  ov.innerHTML='<div class="card" style="width:min(340px,100%)"><h2>MORSE//CHAT</h2>'
+    +'<label>username</label><input id="la_name" maxlength="20" autocomplete="username">'
+    +'<label>password</label><input id="la_pass" type="password" maxlength="60" autocomplete="current-password">'
+    +'<div id="la_err" style="color:#f66;font-size:13px;min-height:16px"></div>'
+    +'<button class="go" id="la_log" type="button">log in</button>'
+    +'<button class="mbtn" id="la_reg" type="button">create account</button></div>';
+  document.body.append(ov);
+  const go=async op=>{const name=document.getElementById("la_name").value.trim(),pass=document.getElementById("la_pass").value;
+    setErr("working…");
+    try{const r=await call({op,name,pass});finishAuth(r.uid,r.name,r.token)}
+    catch(e){setErr(e.message||"something went wrong")}};
+  document.getElementById("la_log").onclick=()=>go("login");
+  document.getElementById("la_reg").onclick=()=>go("register");
+  document.getElementById("la_pass").addEventListener("keydown",e=>{if(e.key==="Enter")go("login")});
+  setErr(err)}
+function setErr(t){const e=document.getElementById("la_err");if(e)e.textContent=t||""}
+(async()=>{let tok="";try{tok=localStorage.getItem("mc_tok")||""}catch(_){}
+  if(tok){try{const r=await call({op:"resume",token:tok});finishAuth(r.uid,r.name,tok);return}catch(_){}}
+  showLogin("")})();
+
+const mods={user:{id:()=>authP,name:()=>uname},db,room,assets,downloads,sample:null};
 window.claude={use:async n=>mods[n]===undefined?null:mods[n]};
 })();
 </script>
